@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>App Assistant with Voice Input</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .bubble {
+      max-width: 70%;
+      padding: 12px 16px;
+      border-radius: 20px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .user {
+      align-self: flex-end;
+      background-color: #2a85ff;
+      color: white;
+    }
+
+    .assistant {
+      align-self: flex-start;
+      background-color: #2e2e2e;
+    }
+
+    .input-area {
+      display: flex;
+      border-top: 1px solid #333;
+      padding: 15px;
+      background-color: #1a1a1a;
+      align-items: center;
+    }
+
+    #prompt {
+      flex: 1;
+      background: #2c2c2c;
+      border: none;
+      color: white;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 16px;
+    }
+
+    #prompt:focus {
+      outline: none;
+    }
+
+    #sendBtn {
+      margin-left: 10px;
+      background-color: #2a85ff;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    #sendBtn:hover {
+      background-color: #1f6cd6;
+    }
+
+    #micBtn {
+      margin-left: 8px;
+      background: none;
+      border: none;
+      font-size: 22px;
+      color: #2a85ff;
+      cursor: pointer;
+      flex-shrink: 0;
+      user-select: none;
+      transition: color 0.3s ease;
+    }
+
+    #micBtn.listening {
+      color: #ff4b5c;
+      animation: pulse 1.2s infinite;
+    }
+
+    #micBtn:disabled {
+      color: #555;
+      cursor: default;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.5;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container" id="chat"></div>
+
+  <div class="input-area">
+    <input type="text" id="prompt" placeholder="Ask me to open an app or write an email..." autocomplete="off" />
+    <button id="sendBtn" title="Send">Send</button>
+    <button id="micBtn" title="Start voice input">🎤</button>
+  </div>
+
+  <script>
+    const chat = document.getElementById("chat");
+    const promptInput = document.getElementById("prompt");
+    const sendBtn = document.getElementById("sendBtn");
+    const micBtn = document.getElementById("micBtn");
+
+    function appendMessage(role, text) {
+      const div = document.createElement("div");
+      div.className = `bubble ${role}`;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const prompt = promptInput.value.trim();
+      if (!prompt) return;
+
+      appendMessage("user", prompt);
+      promptInput.value = "";
+
+      try {
+        const res = await fetch("http://localhost:5005/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt })
+        });
+
+        const data = await res.json();
+        const message = data.error
+          ? `❌ Error: ${data.error}`
+          : `✅ ${JSON.stringify(data, null, 2)}`;
+        appendMessage("assistant", message);
+      } catch (err) {
+        appendMessage("assistant", `❌ Network error: ${err}`);
+      }
+    }
+
+    sendBtn.onclick = sendMessage;
+
+    promptInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") sendMessage();
+    });
+
+    // Voice input setup
+    let recognition;
+    let listening = false;
+
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognition = new SpeechRecognition();
+
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => {
+        listening = true;
+        micBtn.classList.add("listening");
+        micBtn.title = "Listening... Click to stop";
+      };
+
+      recognition.onend = () => {
+        listening = false;
+        micBtn.classList.remove("listening");
+        micBtn.title = "Start voice input";
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error", event.error);
+        listening = false;
+        micBtn.classList.remove("listening");
+        micBtn.title = "Start voice input";
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        promptInput.value = transcript;
+        sendMessage();
+      };
+
+      micBtn.onclick = () => {
+        if (listening) {
+          recognition.stop();
+        } else {
+          recognition.start();
+        }
+      };
+    } else {
+      micBtn.disabled = true;
+      micBtn.title = "Speech recognition not supported in this browser";
+    }
+  </script>
+</body>
+</html>
